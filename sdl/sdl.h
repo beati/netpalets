@@ -17,4 +17,6 @@ int IsLastEventQUIT();
 
 SDL_Texture *LoadBMP(SDL_Renderer *renderer, const char *file);
 
+int RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture);
+
 #endif

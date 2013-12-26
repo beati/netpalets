@@ -53,6 +53,10 @@ func LoadBMP(renderer Renderer, file string) Texture {
 	return C.LoadBMP(renderer, c_file)
 }
 
+	func RenderCopy(renderer Renderer, texture Texture) int {
+	return int(C.RenderCopy(renderer, texture))
+}
+
 func DestroyTexture(texture Texture) {
 	C.SDL_DestroyTexture(texture)
 }

@@ -29,6 +29,10 @@ SDL_Texture *LoadBMP(SDL_Renderer *renderer, const char *file) {
 	return texture;
 }
 
+int RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture) {
+	return SDL_RenderCopy(renderer, texture, NULL, NULL);
+}
+
 static SDL_Event last_event;
 
 int PollEvent() {
