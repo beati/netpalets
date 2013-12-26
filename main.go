@@ -6,10 +6,20 @@ import (
 
 func main() {
 	sdl.Init()
-	sdl.CreateWindow()
+	defer sdl.Quit()
 
-	for {
+	window := sdl.CreateWindow("foo", 300, 200)
+	defer sdl.DestroyWindow(window)
+
+	renderer := sdl.CreateRenderer(window, -1)
+	defer sdl.DestroyRenderer(renderer)
+
+	for running := true; running; {
+		for sdl.PollEvent() != 0 {
+			if sdl.IsLastEventQUIT() {
+				running = false
+			}
+		}
+		sdl.RenderPresent(renderer)
 	}
-
-	sdl.Quit()
 }
