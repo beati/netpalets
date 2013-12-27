@@ -8,23 +8,37 @@ package sdl
 import "C"
 
 import (
+	"errors"
 	"unsafe"
 )
 
-func Init() {
-	C.Init()
+func checkError(cond bool) error {
+	var err error
+	if cond {
+		err = errors.New(C.GoString(C.SDL_GetError()))
+	} else {
+		err = nil
+	}
+	return err
+}
+
+func Init() error {
+	return checkError(int(C.Init()) != 0)
 }
 
 func Quit() {
-	C.Quit()
+	C.SDL_Quit()
 }
 
 type Window *C.SDL_Window
 
-func CreateWindow(title string, w, h int) Window {
+func CreateWindow(title string, w, h int) (Window, error) {
 	c_title := C.CString(title)
 	defer C.free(unsafe.Pointer(c_title))
-	return C.CreateWindow(c_title, C.int(w), C.int(h))
+	window := C.CreateWindow(c_title, C.int(w), C.int(h))
+	err := checkError(C.IsNULL(unsafe.Pointer(window)) != 0)
+
+	return window, err
 }
 
 func DestroyWindow(window Window) {
@@ -33,8 +47,11 @@ func DestroyWindow(window Window) {
 
 type Renderer *C.SDL_Renderer
 
-func CreateRenderer(window Window, index int) Renderer {
-	return C.CreateRenderer(window, C.int(index))
+func CreateRenderer(window Window, index int) (Renderer, error) {
+	renderer := C.CreateRenderer(window, C.int(index))
+	err := checkError(C.IsNULL(unsafe.Pointer(renderer)) != 0)
+
+	return renderer, err
 }
 
 func DestroyRenderer(renderer Renderer) {
@@ -47,22 +64,30 @@ func RenderPresent(renderer Renderer) {
 
 type Texture *C.SDL_Texture
 
-func LoadBMP(renderer Renderer, file string) Texture {
+func LoadBMP(renderer Renderer, file string) (Texture, error) {
 	c_file := C.CString(file)
 	defer C.free(unsafe.Pointer(c_file))
-	return C.LoadBMP(renderer, c_file)
-}
+	texture := C.LoadBMP(renderer, c_file)
+	err := checkError(C.IsNULL(unsafe.Pointer(texture)) != 0)
 
-	func RenderCopy(renderer Renderer, texture Texture) int {
-	return int(C.RenderCopy(renderer, texture))
+	return texture, err
 }
 
 func DestroyTexture(texture Texture) {
 	C.SDL_DestroyTexture(texture)
 }
 
-func PollEvent() int {
-	return int(C.PollEvent())
+func RenderCopy(renderer Renderer, texture Texture) error {
+	return checkError(int(C.RenderCopy(renderer, texture)) != 0)
+}
+
+func RenderCopyXY(renderer Renderer, texture Texture, x, y, w, h int) error {
+	return checkError(int(C.RenderCopyXY(renderer, texture, C.int(x),
+		C.int(y), C.int(w), C.int(h))) != 0)
+}
+
+func PollEvent() bool {
+	return int(C.PollEvent()) != 0
 }
 
 func IsLastEventQUIT() bool {

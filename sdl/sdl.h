@@ -3,9 +3,9 @@
 
 #include <SDL2/SDL.h>
 
-void Init();
+int IsNULL(void *p);
 
-void Quit();
+int Init();
 
 SDL_Window *CreateWindow(const char *title, int w, int h);
 
@@ -18,5 +18,8 @@ int IsLastEventQUIT();
 SDL_Texture *LoadBMP(SDL_Renderer *renderer, const char *file);
 
 int RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture);
+
+int RenderCopyXY(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y,
+		int w, int h);
 
 #endif
