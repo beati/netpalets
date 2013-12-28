@@ -58,6 +58,10 @@ func DestroyRenderer(renderer Renderer) {
 	C.SDL_DestroyRenderer(renderer)
 }
 
+func RenderClear(renderer Renderer) error {
+	return checkError(int(C.SDL_RenderClear(renderer)) != 0)
+}
+
 func RenderPresent(renderer Renderer) {
 	C.SDL_RenderPresent(renderer)
 }
@@ -77,19 +81,45 @@ func DestroyTexture(texture Texture) {
 	C.SDL_DestroyTexture(texture)
 }
 
-func RenderCopy(renderer Renderer, texture Texture) error {
-	return checkError(int(C.RenderCopy(renderer, texture)) != 0)
-}
-
-func RenderCopyXY(renderer Renderer, texture Texture, x, y, w, h int) error {
-	return checkError(int(C.RenderCopyXY(renderer, texture, C.int(x),
+func RenderCopy(renderer Renderer, texture Texture, x, y, w, h int) error {
+	return checkError(int(C.RenderCopy(renderer, texture, C.int(x),
 		C.int(y), C.int(w), C.int(h))) != 0)
 }
 
-func PollEvent() bool {
-	return int(C.PollEvent()) != 0
+var (
+	event_SDL_QUIT        = C.event_SDL_QUIT()
+	event_SDL_MOUSEMOTION = C.event_SDL_MOUSEMOTION()
+)
+
+var Running bool = true
+
+type mouse_state struct {
+	X    int
+	Y    int
+	Xrel int
+	Yrel int
 }
 
-func IsLastEventQUIT() bool {
-	return C.IsLastEventQUIT() != 0
+var Mouse_state mouse_state
+
+func ShowCursor(toggle bool) {
+	if toggle {
+		C.SDL_ShowCursor(C.int(1))
+	} else {
+		C.SDL_ShowCursor(C.int(0))
+	}
+}
+
+func HandleEvents() {
+	for int(C.PollEvent()) != 0 {
+		switch C.LastEventType() {
+		case event_SDL_QUIT:
+			Running = false
+		case event_SDL_MOUSEMOTION:
+			Mouse_state.X = int(C.MouseX())
+			Mouse_state.Y = int(C.MouseY())
+			Mouse_state.Xrel = int(C.MouseXrel())
+			Mouse_state.Yrel = int(C.MouseYrel())
+		}
+	}
 }

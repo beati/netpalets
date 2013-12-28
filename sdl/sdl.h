@@ -11,15 +11,25 @@ SDL_Window *CreateWindow(const char *title, int w, int h);
 
 SDL_Renderer *CreateRenderer(SDL_Window *window, int index);
 
-int PollEvent();
-
-int IsLastEventQUIT();
-
 SDL_Texture *LoadBMP(SDL_Renderer *renderer, const char *file);
 
-int RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture);
-
-int RenderCopyXY(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y,
+int RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y,
 		int w, int h);
+
+int PollEvent();
+
+unsigned int event_SDL_QUIT();
+
+unsigned int event_SDL_MOUSEMOTION();
+
+unsigned int LastEventType();
+
+int MouseX();
+
+int MouseY();
+
+int MouseXrel();
+
+int MouseYrel();
 
 #endif

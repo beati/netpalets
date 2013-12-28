@@ -1,53 +1,44 @@
 package main
 
 import (
+	"github.com/beati/NetPalets/fatal"
 	"github.com/beati/NetPalets/sdl"
-	"log"
 )
 
 func main() {
 	var err error
 
 	err = sdl.Init()
-	if err != nil {
-		log.Fatal(err)
-	}
+	fatal.Check(err)
 	defer sdl.Quit()
 
 	window, err := sdl.CreateWindow("foo", 320, 240)
-	if err != nil {
-		log.Fatal(err)
-	}
+	fatal.Check(err)
 	defer sdl.DestroyWindow(window)
 
 	renderer, err := sdl.CreateRenderer(window, -1)
-	if err != nil {
-		log.Fatal(err)
-	}
+	fatal.Check(err)
 	defer sdl.DestroyRenderer(renderer)
 
 	image, err := sdl.LoadBMP(renderer, "sdl_logo.bmp")
-	if err != nil {
-		log.Fatal(err)
-	}
+	fatal.Check(err)
 	defer sdl.DestroyTexture(image)
 
-	err = sdl.RenderCopy(renderer, image)
-	if err != nil {
-		log.Fatal(err)
-	}
+	sdl.ShowCursor(false)
 
-	err = sdl.RenderCopyXY(renderer, image, 40, 40, 50, 57)
-	if err != nil {
-		log.Fatal(err)
-	}
+	for sdl.Running {
+		sdl.HandleEvents()
 
-	for running := true; running; {
-		for sdl.PollEvent() {
-			if sdl.IsLastEventQUIT() {
-				running = false
-			}
-		}
+		err = sdl.RenderClear(renderer)
+		fatal.Check(err)
+
+		err = sdl.RenderCopy(renderer, image, 0, 0, 320, 240)
+		fatal.Check(err)
+
+		err = sdl.RenderCopy(renderer, image, sdl.Mouse_state.X,
+			sdl.Mouse_state.Y, 50, 57)
+		fatal.Check(err)
+
 		sdl.RenderPresent(renderer)
 	}
 }
