@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/beati/NetPalets/fatal"
-	"github.com/beati/NetPalets/sdl"
+	"github.com/beati/netpalets/fatal"
+	"github.com/beati/netpalets/netpalets_client/sdl"
 )
 
 func main() {
