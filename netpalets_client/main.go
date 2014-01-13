@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/beati/netpalets/fatal"
+	"github.com/beati/netpalets/netpalets_client/rendering"
 	"github.com/beati/netpalets/netpalets_client/sdl"
+	"github.com/beati/netpalets/palet_game"
 )
 
 func main() {
@@ -12,33 +14,15 @@ func main() {
 	fatal.Check(err)
 	defer sdl.Quit()
 
-	window, err := sdl.CreateWindow("foo", 320, 240)
-	fatal.Check(err)
-	defer sdl.DestroyWindow(window)
+	game_state := palet_game.NewPaletGame()
 
-	renderer, err := sdl.CreateRenderer(window, -1)
-	fatal.Check(err)
-	defer sdl.DestroyRenderer(renderer)
+	rendering.InitRendering()
+	defer rendering.CloseRendering()
 
-	image, err := sdl.LoadBMP(renderer, "sdl_logo.bmp")
-	fatal.Check(err)
-	defer sdl.DestroyTexture(image)
-
-	sdl.ShowCursor(false)
+	//sdl.ShowCursor(false)
 
 	for sdl.Running {
 		sdl.HandleEvents()
-
-		err = sdl.RenderClear(renderer)
-		fatal.Check(err)
-
-		err = sdl.RenderCopy(renderer, image, 0, 0, 320, 240)
-		fatal.Check(err)
-
-		err = sdl.RenderCopy(renderer, image, sdl.Mouse_state.X,
-			sdl.Mouse_state.Y, 50, 57)
-		fatal.Check(err)
-
-		sdl.RenderPresent(renderer)
+		rendering.Render(game_state)
 	}
 }
