@@ -34,6 +34,10 @@ func CloseRendering() {
 	sdl.DestroyTexture(palet_gfx)
 }
 
+func shiftPos(x float64) int {
+	return int(x+0.5) - 25
+}
+
 func Render(game_state palet_game.PaletGame) {
 	var err error
 
@@ -44,8 +48,8 @@ func Render(game_state palet_game.PaletGame) {
 	fatal.Check(err)
 
 	for _, palet := range game_state.Palets {
-		err = sdl.RenderCopy(renderer, palet_gfx, int(palet.X()),
-			int(palet.Y()), 50, 50)
+		err = sdl.RenderCopy(renderer, palet_gfx,
+			shiftPos(palet.X()), shiftPos(palet.Y()), 50, 50)
 		fatal.Check(err)
 	}
 
