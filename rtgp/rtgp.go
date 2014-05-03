@@ -9,24 +9,22 @@ import (
 	"math"
 	"math/big"
 	"net"
-	"os"
 	"time"
 )
 
-var sendOn = false
-var tickrateLock chan int
-var payloadTypes []PayloadType
-var udpConns map[int]*net.UDPConn
+var udpConnsLock chan map[int]*udpConnCount
 var connsLock chan map[string]*Conn
 
-const defaultTickrate = 15
-
 func init() {
-	tickrateLock = make(chan int, 1)
-	tickrateLock <- defaultTickrate
-	udpConns = make(map[int]*net.UDPConn)
+	udpConnsLock = make(chan map[int]*udpConnCount, 1)
+	udpConnsLock <- make(map[int]*udpConnCount)
 	connsLock = make(chan map[string]*Conn, 1)
 	connsLock <- make(map[string]*Conn)
+}
+
+type udpConnCount struct {
+	count   uint
+	udpConn *net.UDPConn
 }
 
 type PayloadType struct {
@@ -34,13 +32,12 @@ type PayloadType struct {
 	Periodic bool
 }
 
-func RegisterPayloadTypes(pt []PayloadType) {
-	payloadTypes = pt
-}
-
 type Conn struct {
+	payloadTypes       []PayloadType
 	udpConn            *net.UDPConn
 	udpRAddr           *net.UDPAddr
+	sending            chan bool
+	tickrateLock       chan int
 	lSessionID         uint32
 	rSessionID         uint32
 	lSeq               chan uint32
@@ -63,8 +60,17 @@ func generateSessionID() (uint32, error) {
 	return uint32(id.Uint64()), nil
 }
 
-func NewConn(lAddr string) (*Conn, error) {
+const defaultTickrate = 15
+
+func NewConn(lAddr string, payloadTypes []PayloadType) (*Conn, error) {
 	c := new(Conn)
+	c.payloadTypes = payloadTypes
+
+	c.sending = make(chan bool, 1)
+	c.sending <- false
+
+	c.tickrateLock = make(chan int, 1)
+	c.tickrateLock <- defaultTickrate
 
 	var err error
 	c.lSessionID, err = generateSessionID()
@@ -76,16 +82,19 @@ func NewConn(lAddr string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	udpConn, found := udpConns[udpLAddr.Port]
+	udpConns := <-udpConnsLock
+	_, found := udpConns[udpLAddr.Port]
 	if !found {
-		udpConn, err = net.ListenUDP("udp", udpLAddr)
+		udpConn, err := net.ListenUDP("udp", udpLAddr)
 		if err != nil {
 			return nil, err
 		}
-		udpConns[udpLAddr.Port] = udpConn
+		udpConns[udpLAddr.Port] = &udpConnCount{0, udpConn}
 		go recvUDP(udpConn)
 	}
-	c.udpConn = udpConn
+	udpConns[udpLAddr.Port].count++
+	c.udpConn = udpConns[udpLAddr.Port].udpConn
+	udpConnsLock <- udpConns
 
 	c.lSeq = make(chan uint32, 1)
 	c.lSeq <- 0
@@ -106,9 +115,24 @@ func NewConn(lAddr string) (*Conn, error) {
 	return c, nil
 }
 
-func SetTickRate(tickrate int) {
-	<-tickrateLock
-	tickrateLock <- tickrate
+func (c *Conn) Close() error {
+	<-c.sending
+	c.sending <- false
+
+	conns := <-connsLock
+	delete(conns, c.udpRAddr.String())
+	connsLock <- conns
+
+	udpConns := <-udpConnsLock
+	udpConnCount := udpConns[c.LocalPort()]
+	udpConnCount.count--
+	var err error
+	if udpConnCount.count == 0 {
+		err = udpConnCount.udpConn.Close()
+		delete(udpConns, c.LocalPort())
+	}
+	udpConnsLock <- udpConns
+	return err
 }
 
 func (c *Conn) LocalPort() int {
@@ -120,6 +144,12 @@ func (c *Conn) LocalSessionId() uint32 {
 }
 
 func (c *Conn) SetRemoteAddrAndSessionId(raddr string, id uint32) error {
+	sending := <-c.sending
+	c.sending <- sending
+	if sending {
+		return fmt.Errorf("remote address and session id already set")
+	}
+
 	udpRAddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
 		return err
@@ -129,11 +159,16 @@ func (c *Conn) SetRemoteAddrAndSessionId(raddr string, id uint32) error {
 	conns := <-connsLock
 	conns[c.udpRAddr.String()] = c
 	connsLock <- conns
-	if !sendOn {
-		sendOn = true
-		go sendUDP()
-	}
+
+	sending = <-c.sending
+	c.sending <- true
+	go sendUDP(c)
 	return nil
+}
+
+func (c *Conn) SetTickRate(tickrate int) {
+	<-c.tickrateLock
+	c.tickrateLock <- tickrate
 }
 
 type Payload struct {
@@ -232,7 +267,7 @@ func (c *Conn) updateRecved(data *bytes.Reader) {
 		}
 
 		alreadyRecved := false
-		if !payloadTypes[p.Type].Periodic {
+		if !c.payloadTypes[p.Type].Periodic {
 			var payloadID uint32
 			err = binary.Read(data, binary.LittleEndian, &payloadID)
 			if err != nil {
@@ -247,9 +282,9 @@ func (c *Conn) updateRecved(data *bytes.Reader) {
 			rPayloadIDs = append(rPayloadIDs, payloadID)
 		}
 
-		p.Data = make([]byte, payloadTypes[p.Type].Size)
+		p.Data = make([]byte, c.payloadTypes[p.Type].Size)
 		n, err := data.Read(p.Data)
-		if err != nil || n != payloadTypes[p.Type].Size {
+		if err != nil || n != c.payloadTypes[p.Type].Size {
 			break
 		}
 
@@ -295,8 +330,6 @@ func recvUDP(udpConn *net.UDPConn) {
 
 		c.updateRecved(data)
 	}
-
-	fmt.Fprintln(os.Stderr, "close connection")
 }
 
 func newTicker(tickrate int) *time.Ticker {
@@ -327,7 +360,7 @@ func (c *Conn) writePeriodicToSend(data *bytes.Buffer) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		size := payloadTypes[p.Type].Size
+		size := c.payloadTypes[p.Type].Size
 		data.Write(p.Data[:size])
 		pLock <- p
 	}
@@ -349,19 +382,19 @@ func (c *Conn) writeToSend(data *bytes.Buffer, lSeq uint32) {
 			log.Fatal(err)
 		}
 
-		size := payloadTypes[toSend[i].Type].Size
+		size := c.payloadTypes[toSend[i].Type].Size
 		data.Write(toSend[i].Data[:size])
 	}
 	c.toSendLock <- toSend
 }
 
-func sendUDP() {
-	tickrate := <-tickrateLock
-	tickrateLock <- tickrate
+func sendUDP(c *Conn) {
+	tickrate := <-c.tickrateLock
+	c.tickrateLock <- tickrate
 	ticker := newTicker(tickrate)
 	for {
-		newTickrate := <-tickrateLock
-		tickrateLock <- newTickrate
+		newTickrate := <-c.tickrateLock
+		c.tickrateLock <- newTickrate
 		if newTickrate != tickrate {
 			tickrate = newTickrate
 			ticker.Stop()
@@ -369,23 +402,20 @@ func sendUDP() {
 		}
 		<-ticker.C
 
-		conns := <-connsLock
-		if len(conns) == 0 {
-			sendOn = false
+		sending := <-c.sending
+		c.sending <- sending
+		if !sending {
 			break
 		}
 
-		for _, c := range conns {
-			var data bytes.Buffer
+		var data bytes.Buffer
 
-			lSeq := c.writeHeader(&data)
-			c.writeToSend(&data, lSeq)
-			c.writePeriodicToSend(&data)
+		lSeq := c.writeHeader(&data)
+		c.writeToSend(&data, lSeq)
+		c.writePeriodicToSend(&data)
 
-			_, err := c.udpConn.WriteToUDP(data.Bytes(), c.udpRAddr)
-			if err != nil {
-			}
+		_, err := c.udpConn.WriteToUDP(data.Bytes(), c.udpRAddr)
+		if err != nil {
 		}
-		connsLock <- conns
 	}
 }

@@ -6,6 +6,7 @@ import (
 	//"fmt"
 	"github.com/beati/netpalets/rtgp"
 	"log"
+	"time"
 )
 
 type vector struct {
@@ -20,19 +21,18 @@ type pos struct {
 
 func main() {
 	PayloadTypes := []rtgp.PayloadType{{20, true}, {8, false}}
-	rtgp.RegisterPayloadTypes(PayloadTypes)
-	rtgp.SetTickRate(100)
-	conn, err := rtgp.NewConn(":3001")
+	conn, err := rtgp.NewConn(":3001", PayloadTypes)
+	conn.SetTickRate(100)
 	if err != nil {
 		log.Fatal(err)
 	}
 	conn.SetRemoteAddrAndSessionId("127.0.0.1:3002", 2)
 
-	time := uint32(0)
+	ti := uint32(0)
 	palet := vector{320, 240}
 
 	var b bytes.Buffer
-	binary.Write(&b, binary.LittleEndian, time)
+	binary.Write(&b, binary.LittleEndian, ti)
 	binary.Write(&b, binary.LittleEndian, palet)
 	dataLock := make(chan rtgp.Payload, 1)
 	dataLock <- rtgp.Payload{0, b.Bytes()}
@@ -51,11 +51,11 @@ func main() {
 		}
 
 		var b bytes.Buffer
-		binary.Write(&b, binary.LittleEndian, time)
+		binary.Write(&b, binary.LittleEndian, ti)
 		binary.Write(&b, binary.LittleEndian, palet)
 		<-dataLock
 		dataLock <- rtgp.Payload{0, b.Bytes()}
 
-		time++
+		ti++
 	}
 }

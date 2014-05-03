@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	//"fmt"
-	"github.com/beati/netpalets/netpalets_client/sdl"
+	"github.com/beati/netpalets/sdl"
 	"github.com/beati/netpalets/rtgp"
 	"log"
 	"runtime"
@@ -53,9 +53,8 @@ func main() {
 	defer sdl.DestroyTexture(paletGfx)
 
 	PayloadTypes := []rtgp.PayloadType{{20, true}, {8, false}}
-	rtgp.RegisterPayloadTypes(PayloadTypes)
-	rtgp.SetTickRate(100)
-	conn, err := rtgp.NewConn(":3002")
+	conn, err := rtgp.NewConn(":3002", PayloadTypes)
+	conn.SetTickRate(100)
 	if err != nil {
 		log.Fatal(err)
 	}
