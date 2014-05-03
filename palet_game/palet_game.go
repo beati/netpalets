@@ -22,19 +22,21 @@ func (this *palet) Y() float64 {
 	return this.y
 }
 
-func normalize(x, y float64) (float64, float64) {
+func normalize(x, y float64) (float64, float64, float64) {
 	norm := math.Sqrt(x*x + y*y)
-	return x / norm, y / norm
+	return x / norm, y / norm, norm
 }
 
 func (this *palet) Launch(dir_x, dir_y int) {
-	this.dir_x, this.dir_y = normalize(float64(dir_x), float64(dir_y))
-	this.v = 50.0 * 10
+	this.dir_x, this.dir_y, _ = normalize(float64(dir_x)-this.x,
+		float64(dir_y)-this.y)
+	this.v = 300.0
 }
+
+const palet_radius = 25.0
 
 func (this *palet) handleBoardCollision() {
 	const (
-		palet_radius  = 25.0
 		x_left        = 19.0
 		x_right       = 420.0
 		x_wall_left   = 159.0
@@ -87,6 +89,27 @@ func (this *palet) handleBoardCollision() {
 	}
 }
 
+func handlePaletCollision(p1, p2 *palet) {
+	nx, ny, d := normalize(p2.x-p1.x, p2.y-p1.y)
+	if d <= 2*palet_radius {
+		tx := -ny
+		ty := nx
+
+		v1n := (p1.dir_x*nx + p1.dir_y*ny) * p1.v
+		v1t := (p1.dir_x*tx + p1.dir_y*ty) * p1.v
+		v2n := (p2.dir_x*nx + p2.dir_y*ny) * p2.v
+		v2t := (p2.dir_x*tx + p2.dir_y*ty) * p2.v
+
+		p1.dir_x = v2n*nx + v1t*tx
+		p1.dir_y = v2n*ny + v1t*ty
+		p2.dir_x = v1n*nx + v2t*tx
+		p2.dir_y = v1n*ny + v2t*ty
+
+		p1.dir_x, p1.dir_y, p1.v = normalize(p1.dir_x, p1.dir_y)
+		p2.dir_x, p2.dir_y, p2.v = normalize(p2.dir_x, p2.dir_y)
+	}
+}
+
 type PaletGame struct {
 	Palets *[8]palet
 }
@@ -113,8 +136,7 @@ func NewPaletGame() PaletGame {
 var accumulator time.Duration
 
 func (this PaletGame) Step(dt time.Duration) {
-	//const acceleration = -10.0
-	const acceleration = -0.0
+	const acceleration = -10.0
 	timestep, err := time.ParseDuration("1ms")
 	fatal.Check(err)
 	accumulator += dt
@@ -132,6 +154,12 @@ func (this PaletGame) Step(dt time.Duration) {
 			}
 
 			this.Palets[i].handleBoardCollision()
+
+			for j := range this.Palets[i+1:] {
+				p1 := &this.Palets[i]
+				p2 := &this.Palets[i+j+1]
+				handlePaletCollision(p1, p2)
+			}
 		}
 		accumulator -= timestep
 	}

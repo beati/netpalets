@@ -86,18 +86,12 @@ func RenderCopy(renderer Renderer, texture Texture, x, y, w, h int) error {
 		C.int(y), C.int(w), C.int(h))) != 0)
 }
 
-var (
-	event_SDL_QUIT        = C.event_SDL_QUIT()
-	event_SDL_MOUSEMOTION = C.event_SDL_MOUSEMOTION()
-)
-
 var Running bool = true
 
 type mouse_state struct {
+	Down bool
 	X    int
 	Y    int
-	Xrel int
-	Yrel int
 }
 
 var Mouse_state mouse_state
@@ -111,15 +105,16 @@ func ShowCursor(toggle bool) {
 }
 
 func HandleEvents() {
+	Mouse_state.Down = false
+
 	for int(C.PollEvent()) != 0 {
 		switch C.LastEventType() {
-		case event_SDL_QUIT:
+		case C.SDL_QUIT:
 			Running = false
-		case event_SDL_MOUSEMOTION:
+		case C.SDL_MOUSEBUTTONDOWN:
+			Mouse_state.Down = true
 			Mouse_state.X = int(C.MouseX())
 			Mouse_state.Y = int(C.MouseY())
-			Mouse_state.Xrel = int(C.MouseXrel())
-			Mouse_state.Yrel = int(C.MouseYrel())
 		}
 	}
 }

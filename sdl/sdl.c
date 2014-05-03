@@ -47,14 +47,6 @@ int PollEvent() {
 	return SDL_PollEvent(&last_event);
 }
 
-unsigned int event_SDL_QUIT() {
-	return SDL_QUIT;
-}
-
-unsigned int event_SDL_MOUSEMOTION() {
-	return SDL_MOUSEMOTION;
-}
-
 unsigned int LastEventType() {
 	return last_event.type;
 }
@@ -65,12 +57,4 @@ int MouseX() {
 
 int MouseY() {
 	return last_event.motion.y;
-}
-
-int MouseXrel() {
-	return last_event.motion.xrel;
-}
-
-int MouseYrel() {
-	return last_event.motion.yrel;
 }

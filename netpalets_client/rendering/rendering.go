@@ -2,7 +2,7 @@ package rendering
 
 import (
 	"github.com/beati/netpalets/fatal"
-	"github.com/beati/netpalets/netpalets_client/sdl"
+	"github.com/beati/netpalets/sdl"
 	"github.com/beati/netpalets/palet_game"
 )
 
