@@ -1,10 +1,9 @@
 package main
 
 import (
-	"github.com/beati/netpalets/fatal"
 	"github.com/beati/netpalets/netpalets_client/rendering"
 	"github.com/beati/netpalets/sdl"
-	"github.com/beati/netpalets/palet_game"
+	"github.com/beati/netpalets/paletsgame"
 	"runtime"
 	"time"
 )
@@ -18,7 +17,7 @@ func main() {
 	fatal.Check(err)
 	defer sdl.Quit()
 
-	game_state := palet_game.NewPaletGame()
+	game_state := paletsgame.NewPaletsState()
 
 	rendering.InitRendering()
 	defer rendering.CloseRendering()

@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -27,27 +28,44 @@ type udpConnCount struct {
 	udpConn *net.UDPConn
 }
 
-type PayloadType struct {
+type MsgType struct {
 	Size     int
-	Periodic bool
+	Reliable bool
+}
+
+type msg struct {
+	msgType uint16
+	data    []byte
+}
+
+type periodicMsg struct {
+	msgType  uint16
+	dataLock chan []byte
+}
+
+type reliableMsg struct {
+	msg
+	seqs []uint32
 }
 
 type Conn struct {
-	payloadTypes       []PayloadType
-	udpConn            *net.UDPConn
-	udpRAddr           *net.UDPAddr
-	sending            chan bool
-	tickrateLock       chan int
-	lSessionID         uint32
-	rSessionID         uint32
-	lSeq               chan uint32
-	rSeq               chan uint32
-	rSeqBitfield       chan uint32
-	nextPayloadID      uint32
-	rPayloadIDs        []uint32
-	periodicToSendLock chan []chan Payload
-	toSendLock         chan []ackedPayload
-	recvedLock         chan []Payload
+	mutex        sync.Mutex
+	msgTypes     []MsgType
+	udpConn      *net.UDPConn
+	udpRAddr     *net.UDPAddr
+	sending      bool
+	tickrate     uint
+	lSessionID   uint32
+	rSessionID   uint32
+	lSeq         uint32
+	rSeq         uint32
+	rSeqBits     uint32
+	nextMsgID    uint32
+	rMsgIDs      map[uint32]struct{}
+	periodicMsgs []periodicMsg
+	reliableMsgs map[uint32]reliableMsg
+	recved       chan struct{}
+	recvedMsgs   []msg
 }
 
 func generateSessionID() (uint32, error) {
@@ -60,17 +78,16 @@ func generateSessionID() (uint32, error) {
 	return uint32(id.Uint64()), nil
 }
 
-const defaultTickrate = 15
-
-func NewConn(lAddr string, payloadTypes []PayloadType) (*Conn, error) {
+func NewConn(lAddr string, msgTypes []MsgType, tickrate uint) (*Conn, error) {
 	c := new(Conn)
-	c.payloadTypes = payloadTypes
-
-	c.sending = make(chan bool, 1)
-	c.sending <- false
-
-	c.tickrateLock = make(chan int, 1)
-	c.tickrateLock <- defaultTickrate
+	c.msgTypes = msgTypes
+	c.sending = false
+	c.tickrate = tickrate
+	c.rMsgIDs = make(map[uint32]struct{})
+	c.periodicMsgs = make([]periodicMsg, 0)
+	c.reliableMsgs = make(map[uint32]reliableMsg)
+	c.recved = make(chan struct{}, 1)
+	c.recvedMsgs = make([]msg, 0)
 
 	var err error
 	c.lSessionID, err = generateSessionID()
@@ -96,28 +113,12 @@ func NewConn(lAddr string, payloadTypes []PayloadType) (*Conn, error) {
 	c.udpConn = udpConns[udpLAddr.Port].udpConn
 	udpConnsLock <- udpConns
 
-	c.lSeq = make(chan uint32, 1)
-	c.lSeq <- 0
-	c.rSeq = make(chan uint32, 1)
-	c.rSeq <- 0
-	c.rSeqBitfield = make(chan uint32, 1)
-	c.rSeqBitfield <- 0
-
-	c.periodicToSendLock = make(chan []chan Payload, 1)
-	c.periodicToSendLock <- make([]chan Payload, 0)
-
-	c.toSendLock = make(chan []ackedPayload, 1)
-	c.toSendLock <- make([]ackedPayload, 0)
-
-	c.recvedLock = make(chan []Payload, 1)
-	c.recvedLock <- make([]Payload, 0)
-
 	return c, nil
 }
 
 func (c *Conn) Close() error {
-	<-c.sending
-	c.sending <- false
+	c.mutex.Lock()
+	c.sending = false
 
 	conns := <-connsLock
 	delete(conns, c.udpRAddr.String())
@@ -132,6 +133,8 @@ func (c *Conn) Close() error {
 		delete(udpConns, c.LocalPort())
 	}
 	udpConnsLock <- udpConns
+
+	c.mutex.Unlock()
 	return err
 }
 
@@ -144,14 +147,15 @@ func (c *Conn) LocalSessionId() uint32 {
 }
 
 func (c *Conn) SetRemoteAddrAndSessionId(raddr string, id uint32) error {
-	sending := <-c.sending
-	c.sending <- sending
-	if sending {
+	c.mutex.Lock()
+	if c.sending {
+		c.mutex.Unlock()
 		return fmt.Errorf("remote address and session id already set")
 	}
 
 	udpRAddr, err := net.ResolveUDPAddr("udp", raddr)
 	if err != nil {
+		c.mutex.Unlock()
 		return err
 	}
 	c.udpRAddr = udpRAddr
@@ -160,84 +164,76 @@ func (c *Conn) SetRemoteAddrAndSessionId(raddr string, id uint32) error {
 	conns[c.udpRAddr.String()] = c
 	connsLock <- conns
 
-	sending = <-c.sending
-	c.sending <- true
+	c.sending = true
 	go sendUDP(c)
+
+	c.mutex.Unlock()
 	return nil
 }
 
-func (c *Conn) SetTickRate(tickrate int) {
-	<-c.tickrateLock
-	c.tickrateLock <- tickrate
+func (c *Conn) SetTickRate(tickrate uint) {
+	c.mutex.Lock()
+	c.tickrate = tickrate
+	c.mutex.Unlock()
 }
 
-type Payload struct {
-	Type uint16
-	Data []byte
+func (c *Conn) SendPeriodicMsg(msgType uint16, dataLock chan []byte) {
+	c.mutex.Lock()
+	c.periodicMsgs = append(c.periodicMsgs, periodicMsg{msgType, dataLock})
+	c.mutex.Unlock()
 }
 
-type ackedPayload struct {
-	Payload
-	seqs []uint32
-	id   uint32
+func (c *Conn) SendMsg(msgType uint16, data []byte, now bool) {
 }
 
-func (c *Conn) SendPeriodically(p chan Payload) {
-	toSend := <-c.periodicToSendLock
-	toSend = append(toSend, p)
-	c.periodicToSendLock <- toSend
-}
-
-func (c *Conn) Send(p Payload) {
+func (c *Conn) SendReliableMsg(msgType uint16, data []byte, now bool) {
 	seqs := make([]uint32, 0)
-	toSend := <-c.toSendLock
-	toSend = append(toSend, ackedPayload{p, seqs, c.nextPayloadID})
-	c.toSendLock <- toSend
-	c.nextPayloadID++
+	c.mutex.Lock()
+	c.reliableMsgs[c.nextMsgID] = reliableMsg{msg{msgType, data}, seqs}
+	c.nextMsgID++
+	c.mutex.Unlock()
 }
 
-func (c *Conn) Recv() []Payload {
-	recved := <-c.recvedLock
-	c.recvedLock <- make([]Payload, 0)
-	return recved
+func (c *Conn) RecvMsg() (msgType uint16, data []byte) {
+	c.mutex.Lock()
+	nMsgs := len(c.reliableMsgs)
+	c.mutex.Unlock()
+	if nMsgs == 0 {
+		<-c.recved
+	}
+	c.mutex.Lock()
+	msgType = c.recvedMsgs[len(c.recvedMsgs)-1].msgType
+	data = c.recvedMsgs[len(c.recvedMsgs)-1].data
+	c.recvedMsgs = c.recvedMsgs[:len(c.recvedMsgs)-1]
+	c.mutex.Unlock()
+	return
 }
 
 type packetHeader struct {
-	SessionID    uint32
-	LSeq         uint32
-	RSeq         uint32
-	RSeqBitfield uint32
+	SessionID uint32
+	LSeq      uint32
+	RSeq      uint32
+	RSeqBits  uint32
 }
 
 const maxPacketSize = 1400
 
 func (c *Conn) updateRSeqs(newRSeq uint32) bool {
-	oldRSeq := <-c.rSeq
-	oldRSeqBitfield := <-c.rSeqBitfield
-	if newRSeq < oldRSeq {
-		c.rSeq <- oldRSeq
-		c.rSeqBitfield <- oldRSeqBitfield
+	if newRSeq < c.rSeq {
 		return false
 	}
-	rSeq := newRSeq
-	rSeqBitfield := oldRSeqBitfield
-	d := rSeq - oldRSeq
-	rSeqBitfield <<= d
-	rSeqBitfield |= 1 << (d - 1)
-	c.rSeqBitfield <- rSeqBitfield
-	c.rSeq <- rSeq
+	d := newRSeq - c.rSeq
+	c.rSeqBits <<= d
+	c.rSeqBits |= 1
+	c.rSeq = newRSeq
 	return true
 }
 
-func acked(seqs []uint32, AckedSeq uint32, AckedSeqBitfield uint32) bool {
+func acked(seqs []uint32, ackedSeq uint32, ackedSeqBits uint32) bool {
 	for _, seq := range seqs {
-		if seq == AckedSeq {
-			return true
-		}
-
 		var j uint32
 		for j = 0; j < 32; j++ {
-			if seq == AckedSeq-(j+1) && AckedSeqBitfield|1<<j != 0 {
+			if seq == ackedSeq-j && ackedSeqBits|1<<j != 0 {
 				return true
 			}
 		}
@@ -245,55 +241,50 @@ func acked(seqs []uint32, AckedSeq uint32, AckedSeqBitfield uint32) bool {
 	return false
 }
 
-func (c *Conn) updateToSend(AckedSeq uint32, AckedSeqBitfield uint32) {
-	toSend := make([]ackedPayload, 0)
-	oldToSend := <-c.toSendLock
-	for i := range oldToSend {
-		if !acked(oldToSend[i].seqs, AckedSeq, AckedSeqBitfield) {
-			toSend = append(toSend, oldToSend[i])
+func (c *Conn) updateMsgsToSend(ackedSeq uint32, ackedSeqBits uint32) {
+	for id, msg := range c.reliableMsgs {
+		if acked(msg.seqs, ackedSeq, ackedSeqBits) {
+			delete(c.reliableMsgs, id)
 		}
 	}
-	c.toSendLock <- toSend
 }
 
-func (c *Conn) updateRecved(data *bytes.Reader) {
-	recv := <-c.recvedLock
-	rPayloadIDs := make([]uint32, 0)
+func (c *Conn) updateRecvedMsgs(data *bytes.Reader) {
 	for {
-		var p Payload
-		err := binary.Read(data, binary.LittleEndian, &p.Type)
+		var m msg
+		err := binary.Read(data, binary.LittleEndian, &m.msgType)
 		if err != nil {
 			break
 		}
 
 		alreadyRecved := false
-		if !c.payloadTypes[p.Type].Periodic {
-			var payloadID uint32
-			err = binary.Read(data, binary.LittleEndian, &payloadID)
+		if c.msgTypes[m.msgType].Reliable {
+			var msgID uint32
+			err = binary.Read(data, binary.LittleEndian, &msgID)
 			if err != nil {
 				break
 			}
 
-			for _, rID := range c.rPayloadIDs {
-				if rID == payloadID {
-					alreadyRecved = true
-				}
+			if _, found := c.rMsgIDs[msgID]; found {
+				alreadyRecved = true
 			}
-			rPayloadIDs = append(rPayloadIDs, payloadID)
+			c.rMsgIDs[msgID] = struct{}{}
 		}
 
-		p.Data = make([]byte, c.payloadTypes[p.Type].Size)
-		n, err := data.Read(p.Data)
-		if err != nil || n != c.payloadTypes[p.Type].Size {
+		m.data = make([]byte, c.msgTypes[m.msgType].Size)
+		n, err := data.Read(m.data)
+		if err != nil || n != c.msgTypes[m.msgType].Size {
 			break
 		}
 
 		if !alreadyRecved {
-			recv = append(recv, p)
+			c.recvedMsgs = append(c.recvedMsgs, m)
+			select {
+			case c.recved <- struct{}{}:
+			default:
+			}
 		}
 	}
-	c.rPayloadIDs = rPayloadIDs
-	c.recvedLock <- recv
 }
 
 func recvUDP(udpConn *net.UDPConn) {
@@ -318,6 +309,7 @@ func recvUDP(udpConn *net.UDPConn) {
 			continue
 		}
 
+		c.mutex.Lock()
 		if header.SessionID != c.lSessionID {
 			//continue
 		}
@@ -326,93 +318,86 @@ func recvUDP(udpConn *net.UDPConn) {
 			continue
 		}
 
-		c.updateToSend(header.RSeq, header.RSeqBitfield)
+		c.updateMsgsToSend(header.RSeq, header.RSeqBits)
 
-		c.updateRecved(data)
+		c.updateRecvedMsgs(data)
+		c.mutex.Unlock()
 	}
 }
 
-func newTicker(tickrate int) *time.Ticker {
+func newTicker(tickrate uint) *time.Ticker {
 	period := time.Duration(1 / float64(tickrate) * float64(time.Second))
 	return time.NewTicker(period)
 }
 
 func (c *Conn) writeHeader(data *bytes.Buffer) uint32 {
-	lSeq := <-c.lSeq
-	c.lSeq <- lSeq + 1
-	rSeq := <-c.rSeq
-	rSeqBitfield := <-c.rSeqBitfield
-	c.rSeqBitfield <- rSeqBitfield
-	c.rSeq <- rSeq
-	header := packetHeader{c.rSessionID, lSeq, rSeq, rSeqBitfield}
+	c.lSeq++
+	header := packetHeader{c.rSessionID, c.lSeq, c.rSeq, c.rSeqBits}
 	err := binary.Write(data, binary.LittleEndian, header)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return lSeq
+	return c.lSeq
 }
 
-func (c *Conn) writePeriodicToSend(data *bytes.Buffer) {
-	toSend := <-c.periodicToSendLock
-	for _, pLock := range toSend {
-		p := <-pLock
-		err := binary.Write(data, binary.LittleEndian, p.Type)
+func (c *Conn) writePeriodicMsgs(data *bytes.Buffer) {
+	for _, msg := range c.periodicMsgs {
+		err := binary.Write(data, binary.LittleEndian, msg.msgType)
 		if err != nil {
 			log.Fatal(err)
 		}
-		size := c.payloadTypes[p.Type].Size
-		data.Write(p.Data[:size])
-		pLock <- p
+		size := c.msgTypes[msg.msgType].Size
+		d := <-msg.dataLock
+		data.Write(d[:size])
+		msg.dataLock <- d
 	}
-	c.periodicToSendLock <- toSend
 }
 
-func (c *Conn) writeToSend(data *bytes.Buffer, lSeq uint32) {
-	toSend := <-c.toSendLock
-	for i := range toSend {
-		toSend[i].seqs = append(toSend[i].seqs, lSeq)
+func (c *Conn) writeReliableMsgs(data *bytes.Buffer, lSeq uint32) {
+	for id, msg := range c.reliableMsgs {
+		msg.seqs = append(msg.seqs, lSeq)
 
-		err := binary.Write(data, binary.LittleEndian, toSend[i].Type)
+		err := binary.Write(data, binary.LittleEndian, msg.msgType)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		err = binary.Write(data, binary.LittleEndian, toSend[i].id)
+		err = binary.Write(data, binary.LittleEndian, id)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		size := c.payloadTypes[toSend[i].Type].Size
-		data.Write(toSend[i].Data[:size])
+		size := c.msgTypes[msg.msgType].Size
+		data.Write(msg.data[:size])
 	}
-	c.toSendLock <- toSend
 }
 
 func sendUDP(c *Conn) {
-	tickrate := <-c.tickrateLock
-	c.tickrateLock <- tickrate
+	c.mutex.Lock()
+	tickrate := c.tickrate
+	c.mutex.Unlock()
 	ticker := newTicker(tickrate)
 	for {
-		newTickrate := <-c.tickrateLock
-		c.tickrateLock <- newTickrate
-		if newTickrate != tickrate {
-			tickrate = newTickrate
-			ticker.Stop()
-			ticker = newTicker(tickrate)
-		}
 		<-ticker.C
 
-		sending := <-c.sending
-		c.sending <- sending
-		if !sending {
+		c.mutex.Lock()
+		if !c.sending {
 			break
+		}
+
+		if tickrate != c.tickrate {
+			tickrate = c.tickrate
+			ticker.Stop()
+			ticker = newTicker(tickrate)
 		}
 
 		var data bytes.Buffer
 
 		lSeq := c.writeHeader(&data)
-		c.writeToSend(&data, lSeq)
-		c.writePeriodicToSend(&data)
+		c.writeReliableMsgs(&data, lSeq)
+		c.writePeriodicMsgs(&data)
+		fmt.Printf("%d %d %b\n", c.lSeq, c.rSeq, c.rSeqBits)
+		c.mutex.Unlock()
 
 		_, err := c.udpConn.WriteToUDP(data.Bytes(), c.udpRAddr)
 		if err != nil {

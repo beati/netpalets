@@ -3,7 +3,7 @@ package rendering
 import (
 	"github.com/beati/netpalets/fatal"
 	"github.com/beati/netpalets/sdl"
-	"github.com/beati/netpalets/palet_game"
+	"github.com/beati/netpalets/paletsgame"
 )
 
 var window sdl.Window
@@ -38,7 +38,7 @@ func shiftPos(x float64) int {
 	return int(x+0.5) - 25
 }
 
-func Render(game_state palet_game.PaletGame) {
+func Render(game_state *paletsgame.PaletsState) {
 	var err error
 
 	err = sdl.RenderClear(renderer)
