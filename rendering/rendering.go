@@ -1,9 +1,11 @@
 package rendering
 
 import (
-	"github.com/beati/netpalets/fatal"
+	"bytes"
+	"encoding/binary"
+	"github.com/beati/netpalets/gamestate"
 	"github.com/beati/netpalets/sdl"
-	"github.com/beati/netpalets/paletsgame"
+	"log"
 )
 
 var window sdl.Window
@@ -15,16 +17,24 @@ func InitRendering() {
 	var err error
 
 	window, err = sdl.CreateWindow("foo", 440, 620)
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	renderer, err = sdl.CreateRenderer(window, -1)
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	board_gfx, err = sdl.LoadBMP(renderer, "board.bmp")
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	palet_gfx, err = sdl.LoadBMP(renderer, "palet.bmp")
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func CloseRendering() {
@@ -38,19 +48,56 @@ func shiftPos(x float64) int {
 	return int(x+0.5) - 25
 }
 
-func Render(game_state *paletsgame.PaletsState) {
+func RenderFromNet(gameState []byte) {
 	var err error
 
 	err = sdl.RenderClear(renderer)
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	err = sdl.RenderCopy(renderer, board_gfx, 0, 0, 440, 620)
-	fatal.Check(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	for _, palet := range game_state.Palets {
-		err = sdl.RenderCopy(renderer, palet_gfx,
-			shiftPos(palet.X()), shiftPos(palet.Y()), 50, 50)
-		fatal.Check(err)
+	r := bytes.NewReader(gameState)
+	for i := 0; i < 8; i++ {
+		var xf float64
+		var yf float64
+		binary.Read(r, binary.LittleEndian, &xf)
+		binary.Read(r, binary.LittleEndian, &yf)
+		x := shiftPos(xf)
+		y := shiftPos(yf)
+		err = sdl.RenderCopy(renderer, palet_gfx, x, y, 50, 50)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	sdl.RenderPresent(renderer)
+}
+
+func Render(gameState *gamestate.GameState) {
+	var err error
+
+	err = sdl.RenderClear(renderer)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = sdl.RenderCopy(renderer, board_gfx, 0, 0, 440, 620)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for i := 0; i < 8; i++ {
+		x := shiftPos(gameState.X(i))
+		y := shiftPos(gameState.Y(i))
+		err = sdl.RenderCopy(renderer, palet_gfx, x, y, 50, 50)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	sdl.RenderPresent(renderer)

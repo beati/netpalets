@@ -88,13 +88,13 @@ func RenderCopy(renderer Renderer, texture Texture, x, y, w, h int) error {
 
 var Running bool = true
 
-type mouse_state struct {
+type mouseState struct {
 	Down bool
 	X    int
 	Y    int
 }
 
-var Mouse_state mouse_state
+var Mouse mouseState
 
 func ShowCursor(toggle bool) {
 	if toggle {
@@ -105,16 +105,16 @@ func ShowCursor(toggle bool) {
 }
 
 func HandleEvents() {
-	Mouse_state.Down = false
+	Mouse.Down = false
 
 	for int(C.PollEvent()) != 0 {
 		switch C.LastEventType() {
 		case C.SDL_QUIT:
 			Running = false
 		case C.SDL_MOUSEBUTTONDOWN:
-			Mouse_state.Down = true
-			Mouse_state.X = int(C.MouseX())
-			Mouse_state.Y = int(C.MouseY())
+			Mouse.Down = true
+			Mouse.X = int(C.MouseX())
+			Mouse.Y = int(C.MouseY())
 		}
 	}
 }

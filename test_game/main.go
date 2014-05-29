@@ -1,10 +1,8 @@
 package main
 
 import (
-	//"fmt"
 	"github.com/beati/netpalets/gamestate"
 	"github.com/beati/netpalets/rendering"
-	"github.com/beati/netpalets/rtgp"
 	"github.com/beati/netpalets/sdl"
 	"log"
 	"runtime"
@@ -12,9 +10,9 @@ import (
 )
 
 func main() {
-	runtime.LockOSThread()
-	//runtime.GOMAXPROCS(4)
 	var err error
+
+	runtime.GOMAXPROCS(4)
 
 	err = sdl.Init()
 	if err != nil {
@@ -29,33 +27,10 @@ func main() {
 
 	//sdl.ShowCursor(false)
 
-	msgTypes := []rtgp.MsgType{rtgp.MsgType{128, false}}
-	c, err := rtgp.NewConn(":3001", msgTypes, 100)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = c.SetRemoteAddrAndSessionID("127.0.0.1:3000", 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	t := time.Now()
 
-	gc := make(chan []byte)
-	go func() {
-		for {
-			_, g := c.RecvMsg()
-			gc <- g
-		}
-	}()
-
-	g := make([]byte, 128)
 	for sdl.Running {
-		select {
-		case g = <-gc:
-		default:
-		}
-		rendering.RenderFromNet(g)
+		rendering.Render(gameState)
 
 		sdl.HandleEvents()
 		if sdl.Mouse.Down {

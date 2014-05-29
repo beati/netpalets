@@ -146,7 +146,7 @@ func (c *Conn) LocalSessionId() uint32 {
 	return c.lSessionID
 }
 
-func (c *Conn) SetRemoteAddrAndSessionId(raddr string, id uint32) error {
+func (c *Conn) SetRemoteAddrAndSessionID(raddr string, id uint32) error {
 	c.mutex.Lock()
 	if c.sending {
 		c.mutex.Unlock()
@@ -396,7 +396,8 @@ func sendUDP(c *Conn) {
 		lSeq := c.writeHeader(&data)
 		c.writeReliableMsgs(&data, lSeq)
 		c.writePeriodicMsgs(&data)
-		fmt.Printf("%d %d %b\n", c.lSeq, c.rSeq, c.rSeqBits)
+		//fmt.Printf("%d %d %b\n", c.lSeq, c.rSeq, c.rSeqBits)
+		//fmt.Println(data.Bytes())
 		c.mutex.Unlock()
 
 		_, err := c.udpConn.WriteToUDP(data.Bytes(), c.udpRAddr)

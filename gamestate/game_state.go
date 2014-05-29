@@ -1,6 +1,7 @@
 package gamestate
 
 import (
+	"encoding/binary"
 	"io"
 	"math"
 	"time"
@@ -75,7 +76,7 @@ func (p *palet) handleBoardCollision() {
 	}
 
 	nx, ny, d := normalize(p.x-(xWallLeft+1), p.y-yMid)
-	if d <= wallHeight+paletRadius {
+	if d <= wallHeight/2+paletRadius {
 		tx := -ny
 		ty := nx
 		vn := (p.dirX*nx + p.dirY*ny) * p.v
@@ -85,7 +86,7 @@ func (p *palet) handleBoardCollision() {
 		p.dirX, p.dirY, p.v = normalize(p.dirX, p.dirY)
 	}
 	nx, ny, d = normalize(p.x-(xWallRight-1), p.y-yMid)
-	if d <= wallHeight+paletRadius {
+	if d <= wallHeight/2+paletRadius {
 		tx := -ny
 		ty := nx
 		vn := (p.dirX*nx + p.dirY*ny) * p.v
@@ -154,6 +155,10 @@ func (g *GameState) Launch(palet int, dirX, dirY int) {
 }
 
 func (g *GameState) Serialize(w io.Writer) {
+	for _, p := range g.palets {
+		binary.Write(w, binary.LittleEndian, p.x)
+		binary.Write(w, binary.LittleEndian, p.y)
+	}
 }
 
 func (g *GameState) Step(dt time.Duration) {

@@ -26,6 +26,11 @@ SDL_Renderer *CreateRenderer(SDL_Window *window, int index) {
 SDL_Texture *LoadBMP(SDL_Renderer *renderer, const char *file) {
 	SDL_Surface *image = SDL_LoadBMP(file);
 	if (image == NULL) return NULL;
+	if (SDL_SetColorKey(image, SDL_TRUE, SDL_MapRGB(image->format,
+					255, 0 ,255))) {
+		SDL_FreeSurface(image);
+		return NULL;
+	}
 	SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, image);
 	SDL_FreeSurface(image);
 	return texture;
