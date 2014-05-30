@@ -52,7 +52,7 @@ func main() {
 	msgTypes := make([]rtgp.MsgType, 2)
 	msgTypes[0] = rtgp.MsgType{128, false}
 	msgTypes[1] = rtgp.MsgType{8, true}
-	c1, err := rtgp.NewConn(":3000", msgTypes, 30)
+	c1, err := rtgp.NewConn(":3000", msgTypes, 100)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,11 +62,11 @@ func main() {
 	}
 	i1 := make(chan input)
 	go recvInputs(c1, i1)
-	c2, err := rtgp.NewConn(":3000", msgTypes, 30)
+	c2, err := rtgp.NewConn(":3000", msgTypes, 100)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = c2.SetRemoteAddrAndSessionID("127.0.0.1:3002", 2)
+	err = c2.SetRemoteAddrAndSessionID("85.171.104.166:3002", 2)
 	if err != nil {
 		log.Fatal(err)
 	}
