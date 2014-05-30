@@ -86,7 +86,7 @@ func NewConn(lAddr string, msgTypes []MsgType, tickrate uint) (*Conn, error) {
 	c.rMsgIDs = make(map[uint32]struct{})
 	c.periodicMsgs = make([]periodicMsg, 0)
 	c.reliableMsgs = make(map[uint32]reliableMsg)
-	c.recved = make(chan struct{}, 1)
+	c.recved = make(chan struct{})
 	c.recvedMsgs = make([]msg, 0)
 
 	var err error
@@ -195,12 +195,7 @@ func (c *Conn) SendReliableMsg(msgType uint16, data []byte, now bool) {
 }
 
 func (c *Conn) RecvMsg() (msgType uint16, data []byte) {
-	c.mutex.Lock()
-	nMsgs := len(c.reliableMsgs)
-	c.mutex.Unlock()
-	if nMsgs == 0 {
-		<-c.recved
-	}
+	<-c.recved
 	c.mutex.Lock()
 	msgType = c.recvedMsgs[len(c.recvedMsgs)-1].msgType
 	data = c.recvedMsgs[len(c.recvedMsgs)-1].data
@@ -279,10 +274,9 @@ func (c *Conn) updateRecvedMsgs(data *bytes.Reader) {
 
 		if !alreadyRecved {
 			c.recvedMsgs = append(c.recvedMsgs, m)
-			select {
-			case c.recved <- struct{}{}:
-			default:
-			}
+			go func() {
+				c.recved <- struct{}{}
+			}()
 		}
 	}
 }
