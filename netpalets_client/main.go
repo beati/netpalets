@@ -34,7 +34,7 @@ func main() {
 	msgTypes := make([]rtgp.MsgType, 2)
 	msgTypes[0] = rtgp.MsgType{128, false}
 	msgTypes[1] = rtgp.MsgType{8, true}
-	c, err := rtgp.NewConn(":3001", msgTypes, 100)
+	c, err := rtgp.NewConn(":3001", msgTypes, 30)
 	if err != nil {
 		log.Fatal(err)
 	}
