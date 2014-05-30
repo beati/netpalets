@@ -2,6 +2,8 @@ package main
 
 import (
 	//"fmt"
+	"bytes"
+	"encoding/binary"
 	"github.com/beati/netpalets/gamestate"
 	"github.com/beati/netpalets/rendering"
 	"github.com/beati/netpalets/rtgp"
@@ -29,12 +31,14 @@ func main() {
 
 	//sdl.ShowCursor(false)
 
-	msgTypes := []rtgp.MsgType{rtgp.MsgType{128, false}}
+	msgTypes := make([]rtgp.MsgType, 2)
+	msgTypes[0] = rtgp.MsgType{128, false}
+	msgTypes[1] = rtgp.MsgType{8, true}
 	c, err := rtgp.NewConn(":3001", msgTypes, 100)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = c.SetRemoteAddrAndSessionID("127.0.0.1:3000", 0)
+	err = c.SetRemoteAddrAndSessionID("195.154.73.145:3000", 0)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,7 +53,7 @@ func main() {
 		}
 	}()
 
-	g := make([]byte, 128)
+	g := <-gc
 	for sdl.Running {
 		select {
 		case g = <-gc:
@@ -60,6 +64,12 @@ func main() {
 		sdl.HandleEvents()
 		if sdl.Mouse.Down {
 			gameState.Launch(0, sdl.Mouse.X, sdl.Mouse.Y)
+			var in bytes.Buffer
+			x := int32(sdl.Mouse.X)
+			y := int32(sdl.Mouse.Y)
+			binary.Write(&in, binary.LittleEndian, x)
+			binary.Write(&in, binary.LittleEndian, y)
+			c.SendReliableMsg(1, in.Bytes(), false)
 		}
 
 		dt := time.Since(t)
